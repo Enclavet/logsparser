@@ -24,11 +24,11 @@ $(document).ready( function () {
         var tableData = getTableData(table);
         if(boostactidx != 0 && boostreqidx != 0) {
             var boostArray = getSeriesArray(tableData,["Boost Actual","Boost Requested"],["#0071A7","#FF404E"],[6,7]);
-            createChart(tableData, run, "boost", "Boost vs Actual", "Boost (bar)", 0.2, boostArray);
+            createChart(tableData, run, "boost", "Boost vs Actual", "Boost", 0.2, boostArray);
         }
         if(iatidx != 0) {
             var iatArray = getSeriesArray(tableData,["IAT"],["#0071A7"],[1]);
-            createChart(tableData, run, "iat", "IAT", "IAT (C)", 0.5, iatArray);
+            createChart(tableData, run, "iat", "IAT", "IAT", 0.5, iatArray);
         }
         if(timingidx != 0) {
             var timingArray = getSeriesArray(tableData,["Timing"],["#0071A7"],[2]);
@@ -143,24 +143,28 @@ $tps = 0;
 $iat=0;
 $timing=0;
 $injtime = 0;
+$injduty = 0;
 $lambda1 = 0;
 $lambda2 = 0;
 $boostact = 0;
 $boostreq = 0;
 $duty_detected=0;
+$logtype = 0;
 
 $boostambient = 970;
 $stoich=14.7;
 
 if(isset($_FILES['upload']['name'])) {
+    $logtype=$_REQUEST['logtype'];
     $tmpFilePath = $_FILES['upload']['tmp_name'][0];
     if ($tmpFilePath != ""){
         $filename=uniqid() . ".csv";
         $newFilePath = "./uploads/" . $filename;
         move_uploaded_file($tmpFilePath, $newFilePath);
-        print "Sharable Results: <a href=index.php?logfile=$newFilePath>https://logs.enclavenet.com/index.php?logfile=$newFilePath</a>";
+        print "Sharable Results: <a href=index.php?logtype=$logtype&logfile=$newFilePath>https://logs.enclavenet.com/index.php?logtype=$logtype&logfile=$newFilePath</a>";
     }
 } else if(isset($_REQUEST['logfile'])) {
+    $logtype=$_REQUEST['logtype'];
     $csv = array_map('str_getcsv', file($_REQUEST['logfile']));
     $pull=0;
     $run=1;
@@ -174,29 +178,31 @@ if(isset($_FILES['upload']['name'])) {
         $titlearray[] = $title;
         if(preg_match("/RPM/i", $title)) {
             $rpm=$title_place;
-        } elseif(preg_match("/Engine load/i",$title)) {
+        } elseif(preg_match("/Engine load|Load \(Relative\)/i",$title)) {
             $load=$title_place;        
-        } elseif(preg_match("/Intake air temperature/i",$title)) {
+        } elseif(preg_match("/Intake air temperature|Intake-Air Temperature/i",$title)) {
             $iat=$title_place;
         } elseif(preg_match("/Ignition angle/i",$title)) {
             $timing=$title_place;
         } elseif(preg_match("/Injection time/i",$title)) {
             $injtime=$title_place;
             $duty_detected=1;
-            $titlearray[] = "Inj Duty Cycle";
-        } elseif(preg_match("/Actual value throttle/i",$title)) {
+        } elseif(preg_match("/Actual value throttle|Throttle Angle/i",$title)) {
             $tps=$title_place;
-        } elseif(preg_match("/Oxygen sensing bank 1 Lambda Value/i",$title)) {
+        } elseif(preg_match("/Oxygen sensing bank 1 Lambda Value|Lambda Bank 1/i",$title)) {
             $lambda1=$title_place;
-        } elseif(preg_match("/Oxygen sensing bank 2 Lambda Value/i",$title)) {
+        } elseif(preg_match("/Oxygen sensing bank 2 Lambda Value|Lambda Bank 2/i",$title)) {
             $lambda2=$title_place;
-        } elseif(preg_match("/Boost pressure of sensor/i",$title)) {
+        } elseif(preg_match("/Boost pressure of sensor|Manifold Absolute Pressure/i",$title)) {
             $boostact=$title_place;
-        } elseif(preg_match("/Setpoint boost pressure/i",$title)) {
+        } elseif(preg_match("/Setpoint boost pressure|Target Boost Pressure/i",$title)) {
             $boostreq=$title_place;
         } 
-       
         $title_place++;
+    }
+    if($duty_detected) {
+        $titlearray[] = "Inj Duty Cycle";
+        $injduty=$title_place;
     }
     foreach($csv as $line) {
         $startrun=0;
@@ -256,20 +262,30 @@ if(isset($_FILES['upload']['name'])) {
             print "<tr class='data'>";
             $data_place=0;
             $data_rpm = $rundata[$rpm];
+            $data_injtime = $rundata[$injtime];
             foreach($rundata as $data) {
                 if ($data_place==$injtime) {
                     print "<td>$data</td>";
-                    print "<td>". number_format(($data*$data_rpm)/1200,1) . "</td>";   
-                    $data_place++; 
-                } else if($data_place==$lambda1+$duty_detected || $data_place==$lambda2+$duty_detected) {
-                    print "<td>". $data*$stoich . "</td>";
+                } else if($data_place==$lambda1 || $data_place==$lambda2) {
+                    if($logtype==0) {
+                        print "<td>". $data*$stoich . "</td>";
+                    } else {
+                        print "<td>$data</td>";
+                    }
 
-                } else if($data_place==$boostact+$duty_detected || $data_place==$boostreq+$duty_detected) {
-                    print "<td>". ($data-$boostambient)/1000 . "</td>"; 
+                } else if($data_place==$boostact || $data_place==$boostreq) {
+                    if($logtype==0) {
+                        print "<td>". ($data-$boostambient)/1000 . "</td>"; 
+                    } else {
+                        print "<td>$data</td>";
+                    }
                 } else {
                     print "<td>$data</td>";
                 }
                 $data_place++;
+            }
+            if($duty_detected) {
+                print "<td>". number_format(($data_injtime*$data_rpm)/1200,1) . "</td>";   
             }
             print "</tr>";
         }
@@ -286,6 +302,11 @@ if(isset($_FILES['upload']['name'])) {
 } else {
     print "<form action=\"index.php\" method=\"post\" enctype=\"multipart/form-data\">";
     print "<table>";
+    print "<tr><td>Log Type:</td><td>";
+    print "<select name=\"logtype\">";
+    print "<option value=\"0\">Durametric</option>";
+    print "<option value=\"1\">AccessPort</option>";
+    print "</select></td></tr>";
     print "<tr><td>Log File:</td><td><input name=\"upload[]\" type=\"file\" /></td></tr>";
     print "<tr><td colspan=\"2\"><input type=\"Submit\" value=\"Submit\"></td></tr>";
     print "</form>";
@@ -296,11 +317,11 @@ print "<script>";
 print "var rpmidx=".$rpm.";";
 print "var iatidx=".$iat.";";
 print "var timingidx=".$timing.";";
-print "var dutyidx=".($injtime+$duty_detected).";";
-print "var lambda1idx=".($lambda1+$duty_detected).";";
-print "var lambda2idx=".($lambda2+$duty_detected).";";
-print "var boostactidx=".($boostact+$duty_detected).";";
-print "var boostreqidx=".($boostreq+$duty_detected).";";
+print "var dutyidx=".$injduty.";";
+print "var lambda1idx=".$lambda1.";";
+print "var lambda2idx=".$lambda2.";";
+print "var boostactidx=".$boostact.";";
+print "var boostreqidx=".$boostreq.";";
 print "</script>";
 
 ?>
