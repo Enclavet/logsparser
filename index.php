@@ -31,8 +31,13 @@ $(document).ready( function () {
             createChart(tableData, run, "iat", "IAT", "IAT", 0.5, iatArray);
         }
         if(timingidx != 0) {
-            var timingArray = getSeriesArray(tableData,["Timing"],["#0071A7"],[2]);
-            createChart(tableData, run, "timing", "Timing", "Timing (degrees)", 1, timingArray);
+            if(knocktotal) {
+                var timingArray = getSeriesArray(tableData,["Timing","Knock Total (Timing pulled)"],["#0071A7","#FF404E"],[2,8]);
+                createChart(tableData, run, "timing", "Timing vs Knock", "Timing (degrees)", 1, timingArray);
+            } else {
+                var timingArray = getSeriesArray(tableData,["Timing"],["#0071A7"],[2]);
+                createChart(tableData, run, "timing", "Timing", "Timing (degrees)", 1, timingArray);
+            }
         }
         if(dutyidx != 0) {
             var dutyArray = getSeriesArray(tableData,["Inj Duty Cycle"],["#0071A7"],[3]);
@@ -41,6 +46,10 @@ $(document).ready( function () {
         if(lambda1idx != 0  && lambda2idx != 0) {
             var lambdaArray =  getSeriesArray(tableData,["Lambda #1","Lambda #2"],["#0071A7","#FF404E"],[4,5]);
             createChart(tableData, run, "lambda", "Lambda 1 and 2", "Lambda", 0.5, lambdaArray);
+        }
+        if(maf != 0) {
+            var mafArray = getSeriesArray(tableData,["MAF"],["#0071A7"],[9]);
+            createChart(tableData, run, "maf", "MAF", "MAF", 10, mafArray);
         }
         run++;
     });
@@ -70,7 +79,8 @@ function getTableData(table) {
     var lambda2=[];
     var boostActual = [];
     var boostReq = [];
-    
+    var knockTotalArr = [];
+    var mafArr = [];
 
     table.rows({ search: "applied" }).every(function() {
         var data = this.data();
@@ -82,9 +92,11 @@ function getTableData(table) {
         lambda2.push(parseFloat(data[lambda2idx]));
         boostActual.push(parseFloat(data[boostactidx]));
         boostReq.push(parseFloat(data[boostreqidx]));
+        knockTotalArr.push(parseFloat(data[knocktotal]));
+        mafArr.push(parseFloat(data[maf]));
     });
 
-    dataArray.push(rpmArray, iat, timing, duty, lambda1, lambda2, boostActual, boostReq);
+    dataArray.push(rpmArray, iat, timing, duty, lambda1, lambda2, boostActual, boostReq, knockTotalArr, mafArr);
 
     return dataArray;
 }
@@ -148,7 +160,16 @@ $lambda1 = 0;
 $lambda2 = 0;
 $boostact = 0;
 $boostreq = 0;
+$maf = 0;
+$knockcyl1 = 0;
+$knockcyl2 = 0;
+$knockcyl3 = 0;
+$knockcyl4 = 0;
+$knockcyl5 = 0;
+$knockcyl6 = 0;
+$knocktotal = 0;
 $duty_detected=0;
+$knock_detected=0;
 $logtype = 0;
 
 $boostambient = 970;
@@ -197,12 +218,35 @@ if(isset($_FILES['upload']['name'])) {
             $boostact=$title_place;
         } elseif(preg_match("/Setpoint boost pressure|Target Boost Pressure/i",$title)) {
             $boostreq=$title_place;
-        } 
+        } elseif(preg_match("/MAF/i",$title)) {
+            $maf=$title_place;
+        } elseif(preg_match("/Knock Sums/i",$title)) {
+            $knock_detected=1;
+            if(preg_match("/Cyl\. 1/i",$title)) {
+                $knockcyl1=$title_place;
+            } elseif(preg_match("/Cyl\. 2/i",$title)) {
+                $knockcyl2=$title_place;
+            } elseif(preg_match("/Cyl\. 3/i",$title)) {
+                $knockcyl3=$title_place;
+            } elseif(preg_match("/Cyl\. 4/i",$title)) {
+                $knockcyl4=$title_place;
+            } elseif(preg_match("/Cyl\. 5/i",$title)) {
+                $knockcyl5=$title_place;
+            } elseif(preg_match("/Cyl\. 6/i",$title)) {
+                $knockcyl6=$title_place;
+            } 
+        }
         $title_place++;
     }
     if($duty_detected) {
         $titlearray[] = "Inj Duty Cycle";
         $injduty=$title_place;
+        $title_place++;
+    }
+    if($knock_detected) {
+        $titlearray[] = "Knock Totals";
+        $knocktotal=$title_place;
+        $title_place++;
     }
     foreach($csv as $line) {
         $startrun=0;
@@ -263,6 +307,7 @@ if(isset($_FILES['upload']['name'])) {
             $data_place=0;
             $data_rpm = $rundata[$rpm];
             $data_injtime = $rundata[$injtime];
+            $data_knocktotal = min($rundata[$knockcyl1],$rundata[$knockcyl2],$rundata[$knockcyl3],$rundata[$knockcyl4],$rundata[$knockcyl5],$rundata[$knockcyl6]);
             foreach($rundata as $data) {
                 if ($data_place==$injtime) {
                     print "<td>$data</td>";
@@ -287,6 +332,9 @@ if(isset($_FILES['upload']['name'])) {
             if($duty_detected) {
                 print "<td>". number_format(($data_injtime*$data_rpm)/1200,1) . "</td>";   
             }
+            if($knock_detected) {
+                print "<td>". abs($data_knocktotal) . "</td>";
+            }
             print "</tr>";
         }
         print "</tbody>";
@@ -296,6 +344,7 @@ if(isset($_FILES['upload']['name'])) {
         print "<div id='graph".$run."timing'></div>";
         print "<div id='graph".$run."duty'></div>";
         print "<div id='graph".$run."lambda'></div>";
+        print "<div id='graph".$run."maf'></div>";
         print "<br>";
         $run++;
     }
@@ -322,6 +371,8 @@ print "var lambda1idx=".$lambda1.";";
 print "var lambda2idx=".$lambda2.";";
 print "var boostactidx=".$boostact.";";
 print "var boostreqidx=".$boostreq.";";
+print "var maf=".$maf.";";
+print "var knocktotal=".$knocktotal.";";
 print "</script>";
 
 ?>
